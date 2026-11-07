@@ -1,0 +1,31 @@
+# Supplier Sync (batch) - local environment (env=local).
+# Non-secret settings. Passwords here are the docker-compose local-dev ones;
+# in CloudHub they are replaced by encrypted secure properties.
+
+app:
+  name: "supplier-sync"
+  env: "local"
+
+sftp:
+  host: "localhost"
+  port: "2222"
+  username: "supplier"
+  password: "supplier_local"
+  inboundDir: "inbound"
+  processedDir: "processed"
+  errorDir: "error"
+
+schedule:
+  cron: "0 0 2 * * ?"
+  timeZone: "America/Chicago"
+
+batch:
+  blockSize: "100"
+  maxFailedRecords: "-1"
+
+db:
+  host: "localhost"
+  port: "5432"
+  database: "fulfillment"
+  user: "inventory_api"
+  password: "inventory_api_local"

@@ -1,0 +1,15 @@
+{
+  "name": "FastShip - create shipment",
+  "priority": 50,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/shipments",
+    "headers": { "X-Api-Key": { "equalTo": "fastship-local-key" } }
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "shipment-created.json",
+    "transformers": ["response-template"]
+  }
+}

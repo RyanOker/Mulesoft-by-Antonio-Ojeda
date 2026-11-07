@@ -1,0 +1,294 @@
+#%RAML 1.0
+title: Inventory System API
+version: v1
+baseUri: http://localhost:8092/api/{version}
+mediaType: application/json
+description: |
+  System API over the `inventory` schema in PostgreSQL. It is the only
+  application allowed to read or change products, stock levels and stock
+  reservations.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Reservation lifecycle
+    content: |
+      1. `POST /reservations` holds stock for an order (`RESERVED`). The whole
+         request succeeds or nothing is reserved (single DB transaction).
+      2. `POST /reservations/{id}/commit` when the order ships: on-hand and
+         reserved quantities both decrease (`COMMITTED`).
+      3. `POST /reservations/{id}/release` when the order is cancelled or the
+         payment fails: reserved quantity is returned (`RELEASED`).
+      4. Reservations not committed within 30 minutes are expired by a
+         scheduled flow (`EXPIRED`).
+
+      Reservations are idempotent per `orderId`: posting the same order again
+      returns the existing reservation with `200` instead of reserving twice.
+
+types:
+
+  Product:
+    type: object
+    properties:
+      sku:
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}$
+      name: string
+      description?: string
+      category:
+        enum: [FURNITURE, ELECTRONICS, ACCESSORIES]
+      unitPrice: common.Money
+      weightKg:
+        type: number
+        minimum: 0
+      active: boolean
+    example:
+      sku: DSK-1001
+      name: Standing Desk Frame
+      description: Dual-motor height adjustable frame, 70-120 cm
+      category: FURNITURE
+      unitPrice:
+        amount: 349.00
+        currency: USD
+      weightKg: 28.5
+      active: true
+
+  ProductList:
+    type: object
+    properties:
+      data: Product[]
+      page: common.PageInfo
+
+  Availability:
+    type: object
+    properties:
+      sku: string
+      quantityOnHand:
+        type: integer
+        minimum: 0
+      quantityReserved:
+        type: integer
+        minimum: 0
+      quantityAvailable:
+        type: integer
+        minimum: 0
+      needsReorder: boolean
+      updatedAt: datetime
+    example:
+      sku: HUB-5001
+      quantityOnHand: 9
+      quantityReserved: 0
+      quantityAvailable: 9
+      needsReorder: true
+      updatedAt: 2026-11-07T08:00:00Z
+
+  ReservationItem:
+    type: object
+    properties:
+      sku:
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}$
+      quantity:
+        type: integer
+        minimum: 1
+        maximum: 100
+
+  ReservationRequest:
+    type: object
+    properties:
+      orderId:
+        description: Order id from order-sys-api. One reservation per order.
+        type: string
+        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+      items:
+        type: ReservationItem[]
+        minItems: 1
+        maxItems: 50
+    example:
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+      items:
+        - sku: DSK-1001
+          quantity: 1
+        - sku: DSK-1002
+          quantity: 1
+
+  Reservation:
+    type: object
+    properties:
+      reservationId: string
+      orderId: string
+      status:
+        enum: [RESERVED, COMMITTED, RELEASED, EXPIRED]
+      items: ReservationItem[]
+      expiresAt: datetime
+      createdAt: datetime
+    example:
+      reservationId: a1b2c3d4-0000-4000-8000-000000000001
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+      status: RESERVED
+      items:
+        - sku: DSK-1001
+          quantity: 1
+        - sku: DSK-1002
+          quantity: 1
+      expiresAt: 2026-11-07T10:45:30Z
+      createdAt: 2026-11-07T10:15:30Z
+
+/health:
+  get:
+    description: Liveness and dependency check (used by the load balancer and monitoring).
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/products:
+  get:
+    is: [common.correlated, common.pageable, common.standardErrors]
+    queryParameters:
+      category?:
+        enum: [FURNITURE, ELECTRONICS, ACCESSORIES]
+      includeInactive?:
+        type: boolean
+        default: false
+    responses:
+      200:
+        body:
+          type: ProductList
+          example:
+            data:
+              - sku: DSK-1001
+                name: Standing Desk Frame
+                category: FURNITURE
+                unitPrice:
+                  amount: 349.00
+                  currency: USD
+                weightKg: 28.5
+                active: true
+            page:
+              offset: 0
+              limit: 20
+              total: 1
+  /{sku}:
+    uriParameters:
+      sku:
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}$
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Product
+        404:
+          body:
+            type: common.Error
+
+/availability:
+  get:
+    description: Availability for several SKUs in one call (used when validating a cart).
+    is: [common.correlated, common.standardErrors]
+    queryParameters:
+      skus:
+        description: Comma-separated list of SKUs.
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}(,[A-Z]{3}-[0-9]{4}){0,49}$
+        example: DSK-1001,HUB-5001
+    responses:
+      200:
+        body:
+          type: Availability[]
+  /{sku}:
+    uriParameters:
+      sku:
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}$
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Availability
+        404:
+          body:
+            type: common.Error
+
+/reservations:
+  post:
+    is: [common.correlated, common.standardErrors]
+    body:
+      type: ReservationRequest
+    responses:
+      201:
+        description: Stock reserved.
+        headers:
+          Location:
+            example: /api/v1/reservations/a1b2c3d4-0000-4000-8000-000000000001
+        body:
+          type: Reservation
+      200:
+        description: A reservation already existed for this order; it is returned unchanged.
+        body:
+          type: Reservation
+      409:
+        description: At least one SKU does not have enough stock. Nothing was reserved.
+        body:
+          type: common.Error
+          example:
+            code: INSUFFICIENT_STOCK
+            message: Not enough stock for 1 item(s)
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+            details:
+              - "HDS-5003: requested 1, available 0"
+      422:
+        description: Unknown or inactive SKU.
+        body:
+          type: common.Error
+  /{reservationId}:
+    uriParameters:
+      reservationId:
+        type: string
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Reservation
+        404:
+          body:
+            type: common.Error
+    /commit:
+      post:
+        description: Order shipped - remove the reserved quantity from stock.
+        is: [common.correlated, common.standardErrors]
+        responses:
+          200:
+            body:
+              type: Reservation
+          404:
+            body:
+              type: common.Error
+          409:
+            description: Reservation is not in RESERVED state.
+            body:
+              type: common.Error
+    /release:
+      post:
+        description: Order cancelled or payment failed - give the reserved stock back.
+        is: [common.correlated, common.standardErrors]
+        responses:
+          200:
+            body:
+              type: Reservation
+          404:
+            body:
+              type: common.Error
+          409:
+            description: Reservation is not in RESERVED state.
+            body:
+              type: common.Error

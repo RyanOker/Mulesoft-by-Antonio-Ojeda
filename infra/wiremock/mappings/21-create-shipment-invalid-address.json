@@ -1,0 +1,15 @@
+{
+  "name": "FastShip - invalid address (postal code 00000)",
+  "priority": 20,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/shipments",
+    "headers": { "X-Api-Key": { "equalTo": "fastship-local-key" } },
+    "bodyPatterns": [ { "matchesJsonPath": "$.destination[?(@.postal_code == '00000')]" } ]
+  },
+  "response": {
+    "status": 422,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": { "code": "ADDRESS_INVALID", "message": "Destination postal code could not be validated" } }
+  }
+}

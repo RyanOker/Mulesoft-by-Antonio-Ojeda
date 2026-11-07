@@ -1,0 +1,350 @@
+#%RAML 1.0
+title: Orders Experience API
+version: v1
+baseUri: http://localhost:8081/api/{version}
+mediaType: application/json
+description: |
+  Experience API for the web shop and mobile app. Shapes data for screens
+  (customer-friendly status labels, `inStock` flags instead of raw stock
+  numbers, order numbers instead of internal ids) and is the only API exposed
+  outside the network. Protected in API Manager with Client ID Enforcement
+  and Rate Limiting.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Status labels shown to customers
+    content: |
+      | Internal status                               | `displayStatus` |
+      |-----------------------------------------------|-----------------|
+      | `RECEIVED`, `STOCK_RESERVED`, `PAYMENT_PENDING` | Processing    |
+      | `PAID`                                        | Preparing for shipment |
+      | `SHIPPED`                                     | Shipped         |
+      | `DELIVERED`                                   | Delivered       |
+      | `CANCELLED`                                   | Cancelled       |
+      | `FAILED`                                      | Payment failed  |
+
+types:
+
+  ProductCard:
+    type: object
+    properties:
+      sku: string
+      name: string
+      description?: string
+      category: string
+      price: common.Money
+      inStock: boolean
+      lowStock:
+        description: True when only a few units are left ("Only a few left!").
+        type: boolean
+    example:
+      sku: HUB-5001
+      name: USB-C Docking Station
+      description: 12-in-1, dual HDMI, 100 W pass-through
+      category: ELECTRONICS
+      price:
+        amount: 149.00
+        currency: USD
+      inStock: true
+      lowStock: true
+
+  ProductPage:
+    type: object
+    properties:
+      data: ProductCard[]
+      page: common.PageInfo
+
+  CheckoutRequest:
+    type: object
+    properties:
+      customer:
+        type: object
+        properties:
+          email:
+            type: string
+            pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          firstName: string
+          lastName: string
+          phone?: string
+      items:
+        minItems: 1
+        maxItems: 50
+        type: array
+        items:
+          type: object
+          properties:
+            sku:
+              type: string
+              pattern: ^[A-Z]{3}-[0-9]{4}$
+            quantity:
+              type: integer
+              minimum: 1
+              maximum: 100
+      shippingAddress: common.Address
+      shippingService:
+        enum: [ECONOMY, STANDARD, EXPRESS]
+        default: STANDARD
+      paymentMethodId:
+        description: PaymentMethod id created in the browser with Stripe.js (test mode, e.g. `pm_card_visa`).
+        type: string
+        pattern: ^pm_[A-Za-z0-9_]+$
+    example:
+      customer:
+        email: james.chen@example.com
+        firstName: James
+        lastName: Chen
+      items:
+        - sku: MON-3001
+          quantity: 1
+        - sku: MON-3002
+          quantity: 1
+      shippingAddress:
+        line1: 1600 Main St
+        line2: Apt 4B
+        city: Austin
+        state: TX
+        postalCode: "73301"
+        country: US
+      shippingService: EXPRESS
+      paymentMethodId: pm_card_visa
+
+  OrderView:
+    type: object
+    properties:
+      orderNumber: string
+      displayStatus:
+        enum: [Processing, Preparing for shipment, Shipped, Delivered, Cancelled, Payment failed]
+      placedAt: datetime
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            sku: string
+            name: string
+            quantity: integer
+            lineTotal: common.Money
+      subtotal: common.Money
+      shipping: common.Money
+      total: common.Money
+      shipTo: common.Address
+      tracking?:
+        type: object
+        properties:
+          trackingNumber: string
+          estimatedDelivery?: date-only
+      canCancel: boolean
+    example:
+      orderNumber: ORD-100005
+      displayStatus: Preparing for shipment
+      placedAt: 2026-11-07T10:15:30Z
+      items:
+        - sku: MON-3001
+          name: 27in 4K Monitor
+          quantity: 1
+          lineTotal:
+            amount: 399.00
+            currency: USD
+        - sku: MON-3002
+          name: Dual Monitor Arm
+          quantity: 1
+          lineTotal:
+            amount: 89.00
+            currency: USD
+      subtotal:
+        amount: 488.00
+        currency: USD
+      shipping:
+        amount: 29.50
+        currency: USD
+      total:
+        amount: 517.50
+        currency: USD
+      shipTo:
+        line1: 1600 Main St
+        line2: Apt 4B
+        city: Austin
+        state: TX
+        postalCode: "73301"
+        country: US
+      canCancel: true
+
+  OrderHistoryItem:
+    type: object
+    properties:
+      orderNumber: string
+      displayStatus: string
+      placedAt: datetime
+      total: common.Money
+
+  ShippingQuoteRequest:
+    type: object
+    properties:
+      items:
+        minItems: 1
+        type: array
+        items:
+          type: object
+          properties:
+            sku: string
+            quantity:
+              type: integer
+              minimum: 1
+      shippingAddress: common.Address
+    example:
+      items:
+        - sku: DSK-1001
+          quantity: 1
+      shippingAddress:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+
+  ShippingQuote:
+    type: object
+    properties:
+      service:
+        enum: [ECONOMY, STANDARD, EXPRESS]
+      label: string
+      price: common.Money
+      estimatedDays: integer
+    example:
+      service: EXPRESS
+      label: Express (1 business day)
+      price:
+        amount: 29.50
+        currency: USD
+      estimatedDays: 1
+
+/products:
+  get:
+    is: [common.clientIdRequired, common.correlated, common.pageable, common.standardErrors]
+    queryParameters:
+      category?:
+        enum: [FURNITURE, ELECTRONICS, ACCESSORIES]
+    responses:
+      200:
+        body:
+          type: ProductPage
+  /{sku}:
+    uriParameters:
+      sku:
+        type: string
+        pattern: ^[A-Z]{3}-[0-9]{4}$
+    get:
+      is: [common.clientIdRequired, common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: ProductCard
+        404:
+          body:
+            type: common.Error
+
+/shipping-quotes:
+  post:
+    is: [common.clientIdRequired, common.correlated, common.standardErrors]
+    body:
+      type: ShippingQuoteRequest
+    responses:
+      200:
+        body:
+          type: ShippingQuote[]
+
+/orders:
+  get:
+    description: Order history for a customer.
+    is: [common.clientIdRequired, common.correlated, common.pageable, common.standardErrors]
+    queryParameters:
+      email:
+        type: string
+        example: maria.lopez@example.com
+    responses:
+      200:
+        body:
+          type: object
+          properties:
+            data: OrderHistoryItem[]
+            page: common.PageInfo
+  post:
+    description: Checkout. Send a new `Idempotency-Key` for every checkout attempt and reuse it on retries.
+    is: [common.clientIdRequired, common.correlated, common.idempotent, common.standardErrors]
+    body:
+      type: CheckoutRequest
+    responses:
+      201:
+        body:
+          type: OrderView
+      200:
+        description: Retry of an earlier checkout; the original order is returned.
+        body:
+          type: OrderView
+      402:
+        body:
+          type: common.Error
+          example:
+            code: PAYMENT_DECLINED
+            message: Your card was declined. Please use a different payment method.
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+      409:
+        body:
+          type: common.Error
+          example:
+            code: INSUFFICIENT_STOCK
+            message: Some items are no longer available in the requested quantity.
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+            details:
+              - HDS-5003
+      422:
+        body:
+          type: common.Error
+  /{orderNumber}:
+    uriParameters:
+      orderNumber:
+        type: string
+        pattern: ^ORD-[0-9]+$
+    get:
+      is: [common.clientIdRequired, common.correlated, common.standardErrors]
+      queryParameters:
+        email:
+          description: Must match the order's e-mail (simple ownership check until OAuth is added).
+          type: string
+      responses:
+        200:
+          body:
+            type: OrderView
+        404:
+          description: No order with this number for this e-mail.
+          body:
+            type: common.Error
+    /cancel:
+      post:
+        is: [common.clientIdRequired, common.correlated, common.standardErrors]
+        queryParameters:
+          email:
+            type: string
+        body:
+          type: object
+          properties:
+            reason?:
+              type: string
+              maxLength: 500
+          example:
+            reason: Ordered the wrong size
+        responses:
+          200:
+            body:
+              type: OrderView
+          404:
+            body:
+              type: common.Error
+          409:
+            description: The order has already shipped.
+            body:
+              type: common.Error

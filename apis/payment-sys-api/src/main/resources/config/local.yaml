@@ -1,0 +1,26 @@
+# Payment System API - local environment (env=local).
+# Non-secret settings. Passwords here are the docker-compose local-dev ones;
+# in CloudHub they are replaced by encrypted secure properties.
+
+http:
+  host: "0.0.0.0"
+  port: "8094"
+
+app:
+  name: "payment-sys-api"
+  env: "local"
+
+stripe:
+  baseUrl: "https://api.stripe.com/v1"
+  responseTimeoutMs: "10000"
+
+orderSysApi:
+  baseUrl: "http://localhost:8093/api/v1"
+
+amqp:
+  host: "localhost"
+  port: "5672"
+  virtualHost: "fulfillment"
+  username: "mule"
+  password: "mule_local"
+  exchange: "fulfillment.events"

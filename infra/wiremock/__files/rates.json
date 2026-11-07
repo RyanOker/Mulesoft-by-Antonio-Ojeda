@@ -1,0 +1,8 @@
+{
+  "currency": "USD",
+  "rates": [
+    { "service_code": "FS_ECONOMY",  "service_name": "FastShip Economy",  "amount": 9.90,  "estimated_days": 6 },
+    { "service_code": "FS_STANDARD", "service_name": "FastShip Standard", "amount": 15.00, "estimated_days": 3 },
+    { "service_code": "FS_EXPRESS",  "service_name": "FastShip Express",  "amount": 29.50, "estimated_days": 1 }
+  ]
+}

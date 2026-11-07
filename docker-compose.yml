@@ -1,0 +1,90 @@
+# Local backing services for the Order-to-Fulfillment Integration Hub.
+#
+#   docker compose up -d            # start everything
+#   docker compose ps               # all services should be "healthy"
+#   docker compose down -v          # stop and wipe all data (re-runs the DB seed next time)
+#
+# Salesforce (Developer Edition) and Stripe (test mode) are real cloud
+# services and are not part of this file.
+
+name: fulfillment-hub
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fulfillment}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_local}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Legacy supplier drop-zone. Login: supplier / supplier_local, port 2222.
+  sftp:
+    image: atmoz/sftp:alpine
+    command: "supplier:${SFTP_PASSWORD:-supplier_local}:1001:100"
+    ports:
+      - "${SFTP_PORT:-2222}:22"
+    volumes:
+      - ./infra/sftp/samples:/samples:ro
+      - ./infra/sftp/init/seed-inbound.sh:/etc/sftp.d/seed-inbound.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Message broker for async events (AMQP 0-9-1 -> Mule AMQP connector).
+  # Management UI: http://localhost:15672  (mule / mule_local, vhost "fulfillment")
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+    volumes:
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-fulfillment.conf:ro
+      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  # Mock of the "FastShip" shipping carrier API.
+  # Admin API (list stubs, reset scenarios): http://localhost:8089/__admin
+  carrier-mock:
+    image: wiremock/wiremock:3.13.1
+    command: ["--port", "8080", "--verbose"]
+    ports:
+      - "${CARRIER_MOCK_PORT:-8089}:8080"
+    volumes:
+      - ./infra/wiremock:/home/wiremock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/__admin/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Optional DB browser: docker compose --profile tools up -d  ->  http://localhost:8088
+  adminer:
+    image: adminer:5
+    profiles: ["tools"]
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_PORT:-8088}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

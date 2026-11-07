@@ -1,0 +1,35 @@
+# Maven / Mule build output
+target/
+.mule/
+*.jar
+!**/src/main/resources/**/*.jar
+
+# Anypoint Studio / Code Builder / IDEs
+.metadata/
+.settings/
+.classpath
+.project
+.factorypath
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# APIkit generated exchange dependencies
+exchange_modules/
+
+# Secrets - only the *.example.yaml templates are committed
+**/config/*-secrets.yaml
+!**/config/*-secrets.example.yaml
+.env
+*.pem
+*.key
+*.jks
+
+# Node tooling
+node_modules/
+
+# Logs
+*.log
+logs/

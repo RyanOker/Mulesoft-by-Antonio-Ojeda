@@ -1,0 +1,12 @@
+{
+  "name": "FastShip - missing or wrong API key",
+  "priority": 100,
+  "request": {
+    "urlPathPattern": "/v1/.*"
+  },
+  "response": {
+    "status": 401,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": { "code": "UNAUTHORIZED", "message": "Missing or invalid X-Api-Key header" } }
+  }
+}

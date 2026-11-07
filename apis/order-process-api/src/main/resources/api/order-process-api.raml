@@ -1,0 +1,266 @@
+#%RAML 1.0
+title: Order Process API
+version: v1
+baseUri: http://localhost:8082/api/{version}
+mediaType: application/json
+description: |
+  Process API that runs the order-to-fulfillment business process. It owns
+  no data: it orchestrates the System APIs (customer, inventory, order,
+  payment, shipping) and reacts to events from RabbitMQ.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Place-order orchestration (POST /orders)
+    content: |
+      | # | Step | System API | On failure (compensation) |
+      |---|------|------------|---------------------------|
+      | 1 | Find customer by email, create if missing | customer-sys-api | stop, `502`/`503` |
+      | 2 | Look up products and prices (never trust client prices) | inventory-sys-api | `422 UNKNOWN_SKU` |
+      | 3 | Quote shipping for the chosen service | shipping-sys-api | `503`, nothing to undo |
+      | 4 | Create order (`RECEIVED`) | order-sys-api | stop |
+      | 5 | Reserve stock -> `STOCK_RESERVED` | inventory-sys-api | order -> `FAILED`, `409 INSUFFICIENT_STOCK` |
+      | 6 | Charge card -> `PAID` | payment-sys-api | release reservation, order -> `FAILED`, `402` |
+      | 7 | Publish `order.paid` | RabbitMQ | logged and retried; the order is already paid |
+
+      Shipping is **asynchronous**: a listener on `order.paid` creates the
+      shipment, commits the reservation, sets `SHIPPED` and publishes
+      `order.shipped`. A notifications listener sends Slack / e-mail messages
+      for every `order.*` event. Messages that keep failing go to
+      `fulfillment-dlq`.
+
+      The whole process is idempotent on the `Idempotency-Key` header: a
+      retried request returns the first result.
+  - title: Events published
+    content: |
+      Exchange `fulfillment.events` (topic): `order.created`, `order.paid`,
+      `order.shipped`, `order.cancelled`, `order.failed`. Every message
+      carries the `correlationId`.
+
+types:
+
+  OrderStatus:
+    enum: [RECEIVED, STOCK_RESERVED, PAYMENT_PENDING, PAID, SHIPPED, DELIVERED, CANCELLED, FAILED]
+
+  PlaceOrderRequest:
+    type: object
+    properties:
+      customer:
+        type: object
+        properties:
+          email:
+            type: string
+            pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          firstName: string
+          lastName: string
+          phone?: string
+      items:
+        minItems: 1
+        maxItems: 50
+        type: array
+        items:
+          type: object
+          properties:
+            sku:
+              type: string
+              pattern: ^[A-Z]{3}-[0-9]{4}$
+            quantity:
+              type: integer
+              minimum: 1
+              maximum: 100
+      shippingAddress: common.Address
+      shippingService:
+        enum: [ECONOMY, STANDARD, EXPRESS]
+        default: STANDARD
+      paymentMethodId:
+        type: string
+        pattern: ^pm_[A-Za-z0-9_]+$
+    example:
+      customer:
+        email: maria.lopez@example.com
+        firstName: Maria
+        lastName: Lopez
+      items:
+        - sku: DSK-1001
+          quantity: 1
+        - sku: DSK-1002
+          quantity: 1
+      shippingAddress:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      shippingService: STANDARD
+      paymentMethodId: pm_card_visa
+
+  OrderDetail:
+    description: Aggregated view of an order across the System APIs.
+    type: object
+    properties:
+      orderId: string
+      orderNumber: string
+      status: OrderStatus
+      customer:
+        type: object
+        properties:
+          customerId: string
+          email: string
+          name: string
+      items:
+        type: array
+        items:
+          type: object
+          properties:
+            sku: string
+            productName: string
+            quantity: integer
+            unitPrice: common.Money
+            lineTotal: common.Money
+      subtotal: common.Money
+      shippingCost: common.Money
+      total: common.Money
+      shippingAddress: common.Address
+      payment?:
+        type: object
+        properties:
+          paymentId: string
+          status: string
+      shipment?:
+        type: object
+        properties:
+          trackingNumber: string
+          status: string
+          estimatedDelivery?: date-only
+      createdAt: datetime
+      updatedAt: datetime
+    example:
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+      orderNumber: ORD-100001
+      status: PAID
+      customer:
+        customerId: 003DEMO00000000001
+        email: maria.lopez@example.com
+        name: Maria Lopez
+      items:
+        - sku: DSK-1001
+          productName: Standing Desk Frame
+          quantity: 1
+          unitPrice:
+            amount: 349.00
+            currency: USD
+          lineTotal:
+            amount: 349.00
+            currency: USD
+        - sku: DSK-1002
+          productName: Bamboo Desktop 140x70
+          quantity: 1
+          unitPrice:
+            amount: 189.00
+            currency: USD
+          lineTotal:
+            amount: 189.00
+            currency: USD
+      subtotal:
+        amount: 538.00
+        currency: USD
+      shippingCost:
+        amount: 15.00
+        currency: USD
+      total:
+        amount: 553.00
+        currency: USD
+      shippingAddress:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      payment:
+        paymentId: pi_3QxYzAbCdEfGh123
+        status: SUCCEEDED
+      createdAt: 2026-11-07T10:15:30Z
+      updatedAt: 2026-11-07T10:15:36Z
+
+  CancelRequest:
+    type: object
+    properties:
+      reason:
+        type: string
+        maxLength: 500
+    example:
+      reason: Customer changed their mind
+
+/health:
+  get:
+    description: Reports the status of every System API and the broker this API depends on.
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/orders:
+  post:
+    is: [common.correlated, common.idempotent, common.standardErrors]
+    body:
+      type: PlaceOrderRequest
+    responses:
+      201:
+        description: Order paid. Shipping continues asynchronously.
+        body:
+          type: OrderDetail
+      200:
+        description: Same `Idempotency-Key` as an earlier request; the original result is returned.
+        body:
+          type: OrderDetail
+      402:
+        description: Payment declined. Stock was released and the order marked `FAILED`.
+        body:
+          type: common.Error
+      409:
+        description: Not enough stock. The order was marked `FAILED`.
+        body:
+          type: common.Error
+      422:
+        description: Unknown or inactive SKU, or the carrier rejected the address.
+        body:
+          type: common.Error
+  /{orderId}:
+    uriParameters:
+      orderId:
+        type: string
+        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+    get:
+      description: Combines the order with live payment and tracking status (Scatter-Gather).
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: OrderDetail
+        404:
+          body:
+            type: common.Error
+    /cancel:
+      post:
+        description: |
+          Allowed until the order has shipped. Releases the stock reservation,
+          refunds the payment if there is one, sets `CANCELLED` and publishes
+          `order.cancelled`.
+        is: [common.correlated, common.standardErrors]
+        body:
+          type: CancelRequest
+        responses:
+          200:
+            body:
+              type: OrderDetail
+          404:
+            body:
+              type: common.Error
+          409:
+            description: The order has already shipped or is already cancelled.
+            body:
+              type: common.Error
