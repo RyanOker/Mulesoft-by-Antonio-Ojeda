@@ -1,0 +1,10 @@
+{
+  "tracking_number": "{{request.pathSegments.[2]}}",
+  "status": "IN_TRANSIT",
+  "estimated_delivery": "{{now offset='2 days' format='yyyy-MM-dd' timezone='UTC'}}",
+  "events": [
+    { "status": "LABEL_CREATED", "location": "Austin, TX",  "timestamp": "{{now offset='-2 days' format='yyyy-MM-dd\'T\'HH:mm:ss\'Z\'' timezone='UTC'}}" },
+    { "status": "PICKED_UP",     "location": "Austin, TX",  "timestamp": "{{now offset='-1 days' format='yyyy-MM-dd\'T\'HH:mm:ss\'Z\'' timezone='UTC'}}" },
+    { "status": "IN_TRANSIT",    "location": "Dallas, TX",  "timestamp": "{{now offset='-3 hours' format='yyyy-MM-dd\'T\'HH:mm:ss\'Z\'' timezone='UTC'}}" }
+  ]
+}

@@ -1,0 +1,18 @@
+# Order System API - local environment (env=local).
+# Non-secret settings. Passwords here are the docker-compose local-dev ones;
+# in CloudHub they are replaced by encrypted secure properties.
+
+http:
+  host: "0.0.0.0"
+  port: "8093"
+
+app:
+  name: "order-sys-api"
+  env: "local"
+
+db:
+  host: "localhost"
+  port: "5432"
+  database: "fulfillment"
+  user: "orders_api"
+  password: "orders_api_local"

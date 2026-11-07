@@ -1,0 +1,14 @@
+{
+  "name": "Chaos - slow carrier (X-Mock-Scenario: slow) - use to test HTTP timeouts",
+  "priority": 1,
+  "request": {
+    "urlPathPattern": "/v1/.*",
+    "headers": { "X-Mock-Scenario": { "equalTo": "slow" } }
+  },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 8000,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "message": "This response is deliberately 8 seconds late" }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "FastShip - track shipment",
+  "priority": 50,
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/v1/shipments/FS1Z[0-9A-Z]+",
+    "headers": { "X-Api-Key": { "equalTo": "fastship-local-key" } }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "shipment-tracking.json",
+    "transformers": ["response-template"]
+  }
+}

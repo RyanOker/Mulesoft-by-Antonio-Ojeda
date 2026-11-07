@@ -1,0 +1,216 @@
+#%RAML 1.0
+title: Payment System API
+version: v1
+baseUri: http://localhost:8094/api/{version}
+mediaType: application/json
+description: |
+  System API over **Stripe** (test mode). Creates and confirms
+  PaymentIntents, issues refunds, and receives Stripe webhooks. Callers never
+  see Stripe's own API shape, amounts in cents, or API keys.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Testing with Stripe
+    content: |
+      Use a test secret key (`sk_test_...`) and Stripe's test payment methods:
+
+      | `paymentMethodId`                   | Result                      |
+      |-------------------------------------|-----------------------------|
+      | `pm_card_visa`                      | Succeeds                    |
+      | `pm_card_chargeDeclined`            | `402 PAYMENT_DECLINED`      |
+      | `pm_card_chargeDeclinedInsufficientFunds` | `402 PAYMENT_DECLINED` |
+
+      Amounts are sent in major units (e.g. `49.99`) and converted to cents
+      for Stripe with DataWeave.
+  - title: Webhooks
+    content: |
+      `POST /webhooks/stripe` checks the `Stripe-Signature` header (HMAC-SHA256
+      with the endpoint's signing secret), records the event id through
+      order-sys-api `/processed-events` to drop duplicates, and publishes
+      `payment.succeeded` / `payment.failed` / `payment.refunded` to the
+      `fulfillment.events` exchange. It always answers quickly; the work is
+      done asynchronously. Locally, forward events with the Stripe CLI:
+      `stripe listen --forward-to localhost:8094/api/v1/webhooks/stripe`.
+
+types:
+
+  PaymentStatus:
+    enum: [SUCCEEDED, PROCESSING, REQUIRES_ACTION, FAILED, CANCELED]
+
+  PaymentRequest:
+    type: object
+    properties:
+      orderId: string
+      orderNumber: string
+      amount: common.Money
+      customerEmail: string
+      paymentMethodId:
+        description: Stripe PaymentMethod id (in test mode, e.g. `pm_card_visa`).
+        type: string
+        pattern: ^pm_[A-Za-z0-9_]+$
+    example:
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+      orderNumber: ORD-100001
+      amount:
+        amount: 538.00
+        currency: USD
+      customerEmail: maria.lopez@example.com
+      paymentMethodId: pm_card_visa
+
+  Payment:
+    type: object
+    properties:
+      paymentId:
+        description: Stripe PaymentIntent id.
+        type: string
+        pattern: ^pi_[A-Za-z0-9_]+$
+      orderId: string
+      status: PaymentStatus
+      amount: common.Money
+      amountRefunded?: common.Money
+      failureReason?: string
+      createdAt: datetime
+    example:
+      paymentId: pi_3QxYzAbCdEfGh123
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+      status: SUCCEEDED
+      amount:
+        amount: 538.00
+        currency: USD
+      createdAt: 2026-11-07T10:15:35Z
+
+  RefundRequest:
+    type: object
+    properties:
+      amount?:
+        description: Omit for a full refund.
+        type: common.Money
+      reason:
+        enum: [REQUESTED_BY_CUSTOMER, DUPLICATE, FRAUDULENT, ORDER_CANCELLED]
+    example:
+      reason: ORDER_CANCELLED
+
+  Refund:
+    type: object
+    properties:
+      refundId:
+        type: string
+        pattern: ^re_[A-Za-z0-9_]+$
+      paymentId: string
+      status:
+        enum: [SUCCEEDED, PENDING, FAILED]
+      amount: common.Money
+      createdAt: datetime
+    example:
+      refundId: re_3QxYzAbCdEfGh123
+      paymentId: pi_3QxYzAbCdEfGh123
+      status: SUCCEEDED
+      amount:
+        amount: 538.00
+        currency: USD
+      createdAt: 2026-11-07T11:00:00Z
+
+/health:
+  get:
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/payments:
+  post:
+    description: |
+      Creates and confirms a Stripe PaymentIntent in one call. The
+      `Idempotency-Key` is passed on to Stripe, so a retried request never
+      charges the customer twice.
+    is: [common.correlated, common.idempotent, common.standardErrors]
+    body:
+      type: PaymentRequest
+    responses:
+      201:
+        body:
+          type: Payment
+      402:
+        description: The card was declined.
+        body:
+          type: common.Error
+          example:
+            code: PAYMENT_DECLINED
+            message: "Your card was declined (insufficient_funds)"
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+  /{paymentId}:
+    uriParameters:
+      paymentId:
+        type: string
+        pattern: ^pi_[A-Za-z0-9_]+$
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Payment
+        404:
+          body:
+            type: common.Error
+    /refunds:
+      post:
+        is: [common.correlated, common.idempotent, common.standardErrors]
+        body:
+          type: RefundRequest
+        responses:
+          201:
+            body:
+              type: Refund
+          404:
+            body:
+              type: common.Error
+          409:
+            description: Payment is not refundable (not captured, or already fully refunded).
+            body:
+              type: common.Error
+
+/webhooks:
+  /stripe:
+    post:
+      description: Stripe webhook endpoint. Not exposed through the experience layer.
+      headers:
+        Stripe-Signature:
+          type: string
+          example: t=1762510530,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+      body:
+        application/json:
+          description: Stripe Event object.
+          type: object
+          properties:
+            id:
+              type: string
+              pattern: ^evt_[A-Za-z0-9_]+$
+            type: string
+            data: object
+          example:
+            id: evt_1QxYzAbCdEfGh123
+            type: payment_intent.succeeded
+            data:
+              object:
+                id: pi_3QxYzAbCdEfGh123
+                amount: 53800
+                currency: usd
+      responses:
+        200:
+          description: Event accepted (or was a duplicate and ignored).
+          body:
+            type: object
+            properties:
+              received: boolean
+            example:
+              received: true
+        400:
+          description: Signature missing, invalid, or timestamp too old.
+          body:
+            type: common.Error

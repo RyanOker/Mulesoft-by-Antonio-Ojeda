@@ -1,0 +1,44 @@
+{
+  "users": [
+    {
+      "name": "mule",
+      "password_hash": "G0f4nVckc8+zbfMSVaE/0nqecdxBTCWMrBf7BCMdwtrXU3Qs",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"]
+    }
+  ],
+  "vhosts": [
+    { "name": "fulfillment" }
+  ],
+  "permissions": [
+    { "user": "mule", "vhost": "fulfillment", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    { "name": "fulfillment.events", "vhost": "fulfillment", "type": "topic",  "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "fulfillment.dlx",    "vhost": "fulfillment", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    {
+      "name": "order-notifications", "vhost": "fulfillment", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "fulfillment.dlx", "x-delivery-limit": 5 }
+    },
+    {
+      "name": "payment-events", "vhost": "fulfillment", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "fulfillment.dlx", "x-delivery-limit": 5 }
+    },
+    {
+      "name": "shipment-events", "vhost": "fulfillment", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "fulfillment.dlx", "x-delivery-limit": 5 }
+    },
+    {
+      "name": "fulfillment-dlq", "vhost": "fulfillment", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    }
+  ],
+  "bindings": [
+    { "source": "fulfillment.events", "vhost": "fulfillment", "destination": "order-notifications", "destination_type": "queue", "routing_key": "order.#",    "arguments": {} },
+    { "source": "fulfillment.events", "vhost": "fulfillment", "destination": "payment-events",      "destination_type": "queue", "routing_key": "payment.#",  "arguments": {} },
+    { "source": "fulfillment.events", "vhost": "fulfillment", "destination": "shipment-events",     "destination_type": "queue", "routing_key": "shipment.#", "arguments": {} },
+    { "source": "fulfillment.dlx",    "vhost": "fulfillment", "destination": "fulfillment-dlq",     "destination_type": "queue", "routing_key": "",           "arguments": {} }
+  ]
+}

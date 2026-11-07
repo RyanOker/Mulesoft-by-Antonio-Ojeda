@@ -1,0 +1,11 @@
+{
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": [
+    "17"
+  ],
+  "secureProperties": [
+    "salesforce.password",
+    "salesforce.securityToken",
+    "salesforce.username"
+  ]
+}

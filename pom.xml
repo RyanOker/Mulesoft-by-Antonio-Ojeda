@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Parent POM for every Mule application in the Order-to-Fulfillment hub.
+        It pins the Mule runtime, the Mule Maven plugin, MUnit and every
+        connector version in ONE place, so all apps stay consistent.
+
+        Bump versions here only. Check the latest releases in Anypoint Exchange
+        (or let Anypoint Studio / Code Builder suggest them) before you start.
+
+        NOTE: groupId must be your Anypoint organization id before publishing
+        assets to Exchange or deploying through CI/CD (later phase).
+    -->
+    <groupId>com.antonioojeda.fulfillment</groupId>
+    <artifactId>fulfillment-hub-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Fulfillment Hub - Parent</name>
+
+    <modules>
+        <module>apis/customer-sys-api</module>
+        <module>apis/inventory-sys-api</module>
+        <module>apis/order-sys-api</module>
+        <module>apis/payment-sys-api</module>
+        <module>apis/shipping-sys-api</module>
+        <module>apis/order-process-api</module>
+        <module>apis/orders-exp-api</module>
+        <module>apis/supplier-sync</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Runtime and tooling -->
+        <app.runtime>4.9.0</app.runtime>
+        <mule.maven.plugin.version>4.3.0</mule.maven.plugin.version>
+        <munit.version>3.3.0</munit.version>
+
+        <!-- Connectors and modules -->
+        <http.connector.version>1.10.3</http.connector.version>
+        <apikit.version>1.11.3</apikit.version>
+        <db.connector.version>1.14.11</db.connector.version>
+        <salesforce.connector.version>10.22.0</salesforce.connector.version>
+        <amqp.connector.version>1.8.2</amqp.connector.version>
+        <sftp.connector.version>2.2.0</sftp.connector.version>
+        <objectstore.connector.version>1.2.2</objectstore.connector.version>
+        <validation.module.version>2.0.6</validation.module.version>
+        <secure.properties.module.version>1.2.7</secure.properties.module.version>
+
+        <!-- Third-party libraries -->
+        <postgresql.driver.version>42.7.14</postgresql.driver.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.mule.connectors</groupId>
+                <artifactId>mule-http-connector</artifactId>
+                <version>${http.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.modules</groupId>
+                <artifactId>mule-apikit-module</artifactId>
+                <version>${apikit.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.connectors</groupId>
+                <artifactId>mule-db-connector</artifactId>
+                <version>${db.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.mulesoft.connectors</groupId>
+                <artifactId>mule-salesforce-connector</artifactId>
+                <version>${salesforce.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.connectors</groupId>
+                <artifactId>mule-amqp-connector</artifactId>
+                <version>${amqp.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.connectors</groupId>
+                <artifactId>mule-sftp-connector</artifactId>
+                <version>${sftp.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.connectors</groupId>
+                <artifactId>mule-objectstore-connector</artifactId>
+                <version>${objectstore.connector.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.mule.modules</groupId>
+                <artifactId>mule-validation-module</artifactId>
+                <version>${validation.module.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.mulesoft.modules</groupId>
+                <artifactId>mule-secure-configuration-property-module</artifactId>
+                <version>${secure.properties.module.version}</version>
+                <classifier>mule-plugin</classifier>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.driver.version}</version>
+            </dependency>
+
+            <!-- Testing -->
+            <dependency>
+                <groupId>com.mulesoft.munit</groupId>
+                <artifactId>munit-runner</artifactId>
+                <version>${munit.version}</version>
+                <classifier>mule-plugin</classifier>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.mulesoft.munit</groupId>
+                <artifactId>munit-tools</artifactId>
+                <version>${munit.version}</version>
+                <classifier>mule-plugin</classifier>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.mule.tools.maven</groupId>
+                    <artifactId>mule-maven-plugin</artifactId>
+                    <version>${mule.maven.plugin.version}</version>
+                    <extensions>true</extensions>
+                </plugin>
+                <plugin>
+                    <groupId>com.mulesoft.munit.tools</groupId>
+                    <artifactId>munit-maven-plugin</artifactId>
+                    <version>${munit.version}</version>
+                    <executions>
+                        <execution>
+                            <id>test</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>test</goal>
+                                <goal>coverage-report</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <coverage>
+                            <runCoverage>true</runCoverage>
+                            <!-- Raised to 80 and enforced once flows are implemented (phase 2). -->
+                            <failBuild>false</failBuild>
+                            <requiredApplicationCoverage>80</requiredApplicationCoverage>
+                            <formats>
+                                <format>html</format>
+                                <format>console</format>
+                            </formats>
+                        </coverage>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <repositories>
+        <repository>
+            <id>anypoint-exchange-v3</id>
+            <name>Anypoint Exchange</name>
+            <url>https://maven.anypoint.mulesoft.com/api/v3/maven</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Releases Repository</name>
+            <url>https://repository.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Releases Repository</name>
+            <url>https://repository.mulesoft.org/releases/</url>
+            <layout>default</layout>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+</project>

@@ -1,0 +1,13 @@
+{
+  "name": "Chaos - carrier down (X-Mock-Scenario: down) - use to test error handling",
+  "priority": 1,
+  "request": {
+    "urlPathPattern": "/v1/.*",
+    "headers": { "X-Mock-Scenario": { "equalTo": "down" } }
+  },
+  "response": {
+    "status": 503,
+    "headers": { "Content-Type": "application/json", "Retry-After": "30" },
+    "jsonBody": { "error": { "code": "SERVICE_UNAVAILABLE", "message": "Carrier system is under maintenance" } }
+  }
+}

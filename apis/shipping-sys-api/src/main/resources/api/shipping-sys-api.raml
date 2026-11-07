@@ -1,0 +1,199 @@
+#%RAML 1.0
+title: Shipping System API
+version: v1
+baseUri: http://localhost:8095/api/{version}
+mediaType: application/json
+description: |
+  System API over the **FastShip** carrier (mocked locally with WireMock,
+  see `infra/wiremock`). Translates the carrier's snake_case API, API-key
+  authentication and error codes into the hub's contract, and protects
+  callers from a slow or flaky carrier with timeouts and retries.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Resilience
+    content: |
+      - HTTP response timeout: 5 seconds (the mock's `slow` scenario takes 8).
+      - `POST /shipments` retries 503/timeouts up to 3 times with backoff
+        (`Until Successful`); the mock's `flaky` scenario fails twice and then
+        succeeds, so it shows the retry working.
+      - After the retries are used up the API answers `503 CARRIER_UNAVAILABLE`.
+      - Carrier `422 ADDRESS_INVALID` is passed through as `422`; it is not retried.
+
+      Send `X-Mock-Scenario: slow | down | flaky` to this API to forward the
+      header to the mock and trigger each case.
+
+types:
+
+  Parcel:
+    type: object
+    properties:
+      weightKg:
+        type: number
+        minimum: 0.01
+        maximum: 70
+
+  ShippingService:
+    enum: [ECONOMY, STANDARD, EXPRESS]
+
+  RateRequest:
+    type: object
+    properties:
+      destination: common.Address
+      parcels:
+        type: Parcel[]
+        minItems: 1
+    example:
+      destination:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      parcels:
+        - weightKg: 28.5
+        - weightKg: 14.0
+
+  Rate:
+    type: object
+    properties:
+      service: ShippingService
+      description: string
+      price: common.Money
+      estimatedDays:
+        type: integer
+        minimum: 0
+    example:
+      service: STANDARD
+      description: FastShip Standard
+      price:
+        amount: 15.00
+        currency: USD
+      estimatedDays: 3
+
+  ShipmentRequest:
+    type: object
+    properties:
+      orderNumber:
+        type: string
+        pattern: ^ORD-[0-9]+$
+      service: ShippingService
+      recipientName: string
+      destination: common.Address
+      parcels:
+        type: Parcel[]
+        minItems: 1
+    example:
+      orderNumber: ORD-100001
+      service: STANDARD
+      recipientName: Maria Lopez
+      destination:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      parcels:
+        - weightKg: 42.5
+
+  Shipment:
+    type: object
+    properties:
+      trackingNumber: string
+      orderNumber: string
+      service: ShippingService
+      status:
+        enum: [LABEL_CREATED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, EXCEPTION]
+      labelUrl?: string
+      estimatedDelivery?: date-only
+      createdAt: datetime
+    example:
+      trackingNumber: FS1ZKEDRLADC
+      orderNumber: ORD-100001
+      service: STANDARD
+      status: LABEL_CREATED
+      labelUrl: https://labels.fastship.example/686d329c-463e-48ef-8201-da5f9e1774b5.pdf
+      estimatedDelivery: 2026-11-10
+      createdAt: 2026-11-07T10:20:00Z
+
+  TrackingEvent:
+    type: object
+    properties:
+      status: string
+      location: string
+      timestamp: datetime
+
+  Tracking:
+    type: object
+    properties:
+      trackingNumber: string
+      status:
+        enum: [LABEL_CREATED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, EXCEPTION]
+      estimatedDelivery?: date-only
+      events: TrackingEvent[]
+    example:
+      trackingNumber: FS1ZKEDRLADC
+      status: IN_TRANSIT
+      estimatedDelivery: 2026-11-09
+      events:
+        - status: LABEL_CREATED
+          location: Austin, TX
+          timestamp: 2026-11-05T04:40:28Z
+        - status: IN_TRANSIT
+          location: Dallas, TX
+          timestamp: 2026-11-07T01:40:28Z
+
+/health:
+  get:
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/rates:
+  post:
+    is: [common.correlated, common.standardErrors]
+    body:
+      type: RateRequest
+    responses:
+      200:
+        body:
+          type: Rate[]
+
+/shipments:
+  post:
+    is: [common.correlated, common.standardErrors]
+    body:
+      type: ShipmentRequest
+    responses:
+      201:
+        body:
+          type: Shipment
+      422:
+        description: The carrier rejected the destination address.
+        body:
+          type: common.Error
+          example:
+            code: ADDRESS_INVALID
+            message: Destination postal code could not be validated
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+  /{trackingNumber}:
+    uriParameters:
+      trackingNumber:
+        type: string
+        pattern: ^FS1Z[0-9A-Z]+$
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Tracking
+        404:
+          body:
+            type: common.Error

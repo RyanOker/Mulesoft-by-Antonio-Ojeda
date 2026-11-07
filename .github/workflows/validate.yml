@@ -1,0 +1,40 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-specs:
+    name: API specs (AMF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/raml-validator/package-lock.json
+      - name: Install validator
+        working-directory: tools/raml-validator
+        run: npm ci
+      - name: Validate RAML specs and shared library copies
+        working-directory: tools/raml-validator
+        run: npm run validate
+
+  local-stack:
+    name: Local stack (docker compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start services
+        run: docker compose up -d
+      - name: Smoke test
+        run: scripts/smoke-test-infra.sh
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Stop services
+        if: always()
+        run: docker compose down -v

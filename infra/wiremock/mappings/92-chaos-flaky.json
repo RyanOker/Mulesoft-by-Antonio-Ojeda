@@ -1,0 +1,34 @@
+{
+  "mappings": [
+    {
+      "name": "Chaos - flaky carrier, attempt 1 fails (X-Mock-Scenario: flaky)",
+      "priority": 1,
+      "scenarioName": "flaky-carrier",
+      "requiredScenarioState": "Started",
+      "newScenarioState": "failed-once",
+      "request": { "method": "POST", "urlPath": "/v1/shipments", "headers": { "X-Mock-Scenario": { "equalTo": "flaky" } } },
+      "response": { "status": 503, "headers": { "Content-Type": "application/json" },
+                    "jsonBody": { "error": { "code": "SERVICE_UNAVAILABLE", "message": "Temporary failure (attempt 1)" } } }
+    },
+    {
+      "name": "Chaos - flaky carrier, attempt 2 fails",
+      "priority": 1,
+      "scenarioName": "flaky-carrier",
+      "requiredScenarioState": "failed-once",
+      "newScenarioState": "failed-twice",
+      "request": { "method": "POST", "urlPath": "/v1/shipments", "headers": { "X-Mock-Scenario": { "equalTo": "flaky" } } },
+      "response": { "status": 503, "headers": { "Content-Type": "application/json" },
+                    "jsonBody": { "error": { "code": "SERVICE_UNAVAILABLE", "message": "Temporary failure (attempt 2)" } } }
+    },
+    {
+      "name": "Chaos - flaky carrier, attempt 3 succeeds and the scenario resets",
+      "priority": 1,
+      "scenarioName": "flaky-carrier",
+      "requiredScenarioState": "failed-twice",
+      "newScenarioState": "Started",
+      "request": { "method": "POST", "urlPath": "/v1/shipments", "headers": { "X-Mock-Scenario": { "equalTo": "flaky" } } },
+      "response": { "status": 201, "headers": { "Content-Type": "application/json" },
+                    "bodyFileName": "shipment-created.json", "transformers": ["response-template"] }
+    }
+  ]
+}

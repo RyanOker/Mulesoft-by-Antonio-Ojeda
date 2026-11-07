@@ -1,0 +1,14 @@
+{
+  "name": "FastShip - quote shipping rates",
+  "priority": 50,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/rates",
+    "headers": { "X-Api-Key": { "equalTo": "fastship-local-key" } }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "rates.json"
+  }
+}

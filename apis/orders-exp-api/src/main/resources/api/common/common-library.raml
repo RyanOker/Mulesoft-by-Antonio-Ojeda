@@ -1,0 +1,198 @@
+#%RAML 1.0 Library
+usage: |
+  Types and traits shared by every Fulfillment Hub API.
+
+  This is the single source of truth. `scripts/sync-raml-common.sh` copies it
+  into each API's `src/main/resources/api/common/` folder. Later it will be
+  published to Anypoint Exchange as a RAML fragment and consumed from there.
+
+types:
+
+  Error:
+    description: The one error format every API in the hub returns.
+    type: object
+    properties:
+      code:
+        description: Stable, machine-readable error code (e.g. `NOT_FOUND`, `INSUFFICIENT_STOCK`).
+        type: string
+        pattern: ^[A-Z][A-Z0-9_]*$
+      message:
+        description: Human-readable explanation. Never contains stack traces or internal details.
+        type: string
+      correlationId:
+        description: Same value as the `X-Correlation-ID` header. Use it to find the request in the logs.
+        type: string
+      timestamp:
+        type: datetime
+      details?:
+        description: Optional list of field-level problems (validation errors, unavailable SKUs, ...).
+        type: string[]
+    example:
+      code: NOT_FOUND
+      message: Resource not found
+      correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+      timestamp: 2026-11-07T10:15:30Z
+
+  Money:
+    type: object
+    properties:
+      amount:
+        type: number
+        minimum: 0
+      currency:
+        description: ISO 4217 currency code.
+        type: string
+        pattern: ^[A-Z]{3}$
+    example:
+      amount: 538.00
+      currency: USD
+
+  Address:
+    type: object
+    properties:
+      line1:
+        type: string
+        maxLength: 200
+      line2?:
+        type: string
+        maxLength: 200
+      city:
+        type: string
+        maxLength: 100
+      state?:
+        type: string
+        maxLength: 50
+      postalCode:
+        type: string
+        maxLength: 20
+      country:
+        description: ISO 3166-1 alpha-2 country code.
+        type: string
+        pattern: ^[A-Z]{2}$
+    example:
+      line1: 742 Evergreen Terrace
+      city: Springfield
+      state: IL
+      postalCode: "62704"
+      country: US
+
+  PageInfo:
+    type: object
+    properties:
+      offset:
+        type: integer
+        minimum: 0
+      limit:
+        type: integer
+        minimum: 1
+      total:
+        description: Total number of records that match the query.
+        type: integer
+        minimum: 0
+    example:
+      offset: 0
+      limit: 20
+      total: 14
+
+  Health:
+    type: object
+    properties:
+      status:
+        enum: [UP, DEGRADED, DOWN]
+      application: string
+      version: string
+      dependencies?:
+        description: Status of each downstream system (database, Salesforce, broker, ...).
+        type: object
+        properties:
+          //:
+            enum: [UP, DOWN]
+    example:
+      status: UP
+      application: inventory-sys-api
+      version: 1.0.0
+      dependencies:
+        postgres: UP
+
+traits:
+
+  correlated:
+    description: |
+      Every request carries a correlation id. If the caller does not send
+      `X-Correlation-ID`, the API generates one. The same value is returned in
+      the response header, in error bodies, in every log line, and is passed on
+      to every downstream call.
+    headers:
+      X-Correlation-ID?:
+        type: string
+        maxLength: 64
+        example: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+
+  pageable:
+    queryParameters:
+      offset?:
+        type: integer
+        minimum: 0
+        default: 0
+      limit?:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  idempotent:
+    description: |
+      Retrying a request with the same `Idempotency-Key` returns the original
+      result instead of performing the operation twice.
+    headers:
+      Idempotency-Key:
+        type: string
+        minLength: 8
+        maxLength: 64
+        example: 9b6e1c1e-2f8a-4f0e-b0a4-5d7a9d3c2e10
+
+  clientIdRequired:
+    description: |
+      Protected by the Client ID Enforcement policy in API Manager. Request
+      credentials for an application in Anypoint Exchange.
+    headers:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+    responses:
+      401:
+        description: Missing or invalid client credentials.
+        body:
+          application/json:
+            type: Error
+      429:
+        description: Rate limit exceeded (Rate Limiting SLA policy).
+        body:
+          application/json:
+            type: Error
+
+  standardErrors:
+    responses:
+      400:
+        description: The request is invalid (failed schema validation or business rule).
+        body:
+          application/json:
+            type: Error
+            example:
+              code: BAD_REQUEST
+              message: Invalid request
+              correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+              timestamp: 2026-11-07T10:15:30Z
+              details:
+                - "items[0].quantity: expected minimum 1"
+      500:
+        description: Unexpected error. The correlation id identifies the failure in the logs.
+        body:
+          application/json:
+            type: Error
+      503:
+        description: A downstream system is unavailable. Safe to retry later.
+        body:
+          application/json:
+            type: Error

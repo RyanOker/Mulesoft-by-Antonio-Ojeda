@@ -1,0 +1,13 @@
+{
+  "name": "fulfillment-hub-raml-validator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Validates every API spec in the repo with AMF, the same parser Anypoint Platform uses.",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate.mjs"
+  },
+  "dependencies": {
+    "amf-client-js": "5.16.0"
+  }
+}

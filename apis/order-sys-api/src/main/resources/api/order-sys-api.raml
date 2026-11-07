@@ -1,0 +1,309 @@
+#%RAML 1.0
+title: Order System API
+version: v1
+baseUri: http://localhost:8093/api/{version}
+mediaType: application/json
+description: |
+  System API over the `orders` schema in PostgreSQL: orders, order lines,
+  status history, and the processed-events table used to de-duplicate
+  webhooks and messages. Contains no orchestration logic; it only stores and
+  returns order data and enforces valid status transitions.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Order status transitions
+    content: |
+      ```
+      RECEIVED -> STOCK_RESERVED -> PAYMENT_PENDING -> PAID -> SHIPPED -> DELIVERED
+          |             |                  |            |
+          +-------------+------------------+------------+--> CANCELLED
+          +-------------+------------------+---------------> FAILED
+      ```
+      Any other change returns `409 INVALID_STATUS_TRANSITION`. Every change
+      is recorded automatically in the status history (database trigger).
+
+types:
+
+  OrderId:
+    type: string
+    pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+
+  OrderStatus:
+    enum: [RECEIVED, STOCK_RESERVED, PAYMENT_PENDING, PAID, SHIPPED, DELIVERED, CANCELLED, FAILED]
+
+  OrderLine:
+    type: object
+    properties:
+      lineNumber:
+        type: integer
+        minimum: 1
+      sku: string
+      productName: string
+      quantity:
+        type: integer
+        minimum: 1
+      unitPrice:
+        type: number
+        minimum: 0
+      lineTotal:
+        type: number
+        minimum: 0
+
+  Order:
+    type: object
+    properties:
+      orderId: OrderId
+      orderNumber:
+        type: string
+        pattern: ^ORD-[0-9]+$
+      customerId: string
+      customerEmail: string
+      status: OrderStatus
+      lines: OrderLine[]
+      subtotal: common.Money
+      shippingCost: common.Money
+      total: common.Money
+      shippingAddress: common.Address
+      reservationId?: string
+      paymentId?: string
+      trackingNumber?: string
+      correlationId: string
+      createdAt: datetime
+      updatedAt: datetime
+    example:
+      orderId: 7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1002
+      orderNumber: ORD-100002
+      customerId: 003DEMO00000000002
+      customerEmail: james.chen@example.com
+      status: PAID
+      lines:
+        - lineNumber: 1
+          sku: MON-3001
+          productName: 27in 4K Monitor
+          quantity: 1
+          unitPrice: 399.00
+          lineTotal: 399.00
+      subtotal:
+        amount: 399.00
+        currency: USD
+      shippingCost:
+        amount: 15.00
+        currency: USD
+      total:
+        amount: 414.00
+        currency: USD
+      shippingAddress:
+        line1: 1600 Main St
+        line2: Apt 4B
+        city: Austin
+        state: TX
+        postalCode: "73301"
+        country: US
+      reservationId: a1b2c3d4-0000-4000-8000-000000000002
+      paymentId: pi_demo_000000000000000002
+      correlationId: seed-0002
+      createdAt: 2026-11-07T10:15:30Z
+      updatedAt: 2026-11-07T10:16:02Z
+
+  OrderCreate:
+    type: object
+    properties:
+      customerId: string
+      customerEmail: string
+      currency:
+        type: string
+        pattern: ^[A-Z]{3}$
+        default: USD
+      shippingAddress: common.Address
+      shippingCost?:
+        type: number
+        minimum: 0
+      lines:
+        minItems: 1
+        maxItems: 50
+        type: array
+        items:
+          type: object
+          properties:
+            sku: string
+            productName: string
+            quantity:
+              type: integer
+              minimum: 1
+            unitPrice:
+              type: number
+              minimum: 0
+    example:
+      customerId: 003DEMO00000000001
+      customerEmail: maria.lopez@example.com
+      currency: USD
+      shippingAddress:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      lines:
+        - sku: DSK-1001
+          productName: Standing Desk Frame
+          quantity: 1
+          unitPrice: 349.00
+
+  OrderUpdate:
+    description: Partial update used by the process layer as the order moves through its lifecycle.
+    type: object
+    minProperties: 1
+    properties:
+      status?: OrderStatus
+      reservationId?: string
+      paymentId?: string
+      trackingNumber?: string
+      shippingCost?:
+        type: number
+        minimum: 0
+    example:
+      status: PAID
+      paymentId: pi_3QxYzAbCdEfGh123
+
+  OrderSummary:
+    type: object
+    properties:
+      orderId: OrderId
+      orderNumber: string
+      status: OrderStatus
+      total: common.Money
+      createdAt: datetime
+
+  OrderList:
+    type: object
+    properties:
+      data: OrderSummary[]
+      page: common.PageInfo
+
+  StatusChange:
+    type: object
+    properties:
+      fromStatus?: OrderStatus
+      toStatus: OrderStatus
+      changedAt: datetime
+    example:
+      fromStatus: RECEIVED
+      toStatus: STOCK_RESERVED
+      changedAt: 2026-11-07T10:15:31Z
+
+  ProcessedEvent:
+    type: object
+    properties:
+      eventId:
+        type: string
+        maxLength: 128
+      source:
+        enum: [STRIPE, CARRIER, INTERNAL]
+      eventType: string
+    example:
+      eventId: evt_1QxYzAbCdEfGh123
+      source: STRIPE
+      eventType: payment_intent.succeeded
+
+/health:
+  get:
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/orders:
+  get:
+    is: [common.correlated, common.pageable, common.standardErrors]
+    queryParameters:
+      customerId?: string
+      customerEmail?: string
+      status?: OrderStatus
+    responses:
+      200:
+        body:
+          type: OrderList
+  post:
+    is: [common.correlated, common.idempotent, common.standardErrors]
+    body:
+      type: OrderCreate
+    responses:
+      201:
+        description: Order stored with status `RECEIVED`.
+        headers:
+          Location:
+            example: /api/v1/orders/7f0c4c2e-1d2a-4c5e-9a51-0b6f2a7c1001
+        body:
+          type: Order
+      200:
+        description: An order with this `Idempotency-Key` already exists; it is returned unchanged.
+        body:
+          type: Order
+  /{orderId}:
+    uriParameters:
+      orderId: OrderId
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Order
+        404:
+          body:
+            type: common.Error
+    patch:
+      is: [common.correlated, common.standardErrors]
+      body:
+        type: OrderUpdate
+      responses:
+        200:
+          body:
+            type: Order
+        404:
+          body:
+            type: common.Error
+        409:
+          body:
+            type: common.Error
+            example:
+              code: INVALID_STATUS_TRANSITION
+              message: Cannot change status from SHIPPED to CANCELLED
+              correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+              timestamp: 2026-11-07T10:15:30Z
+    /history:
+      get:
+        is: [common.correlated, common.standardErrors]
+        responses:
+          200:
+            body:
+              type: StatusChange[]
+          404:
+            body:
+              type: common.Error
+
+/processed-events:
+  post:
+    description: |
+      Records that an event (Stripe webhook, broker message) has been handled.
+      Callers do this *before* acting on the event: `201` means "first time,
+      go ahead", `409` means "already handled, skip it".
+    is: [common.correlated, common.standardErrors]
+    body:
+      type: ProcessedEvent
+    responses:
+      201:
+        body:
+          type: ProcessedEvent
+      409:
+        body:
+          type: common.Error
+          example:
+            code: DUPLICATE_EVENT
+            message: Event evt_1QxYzAbCdEfGh123 was already processed
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z

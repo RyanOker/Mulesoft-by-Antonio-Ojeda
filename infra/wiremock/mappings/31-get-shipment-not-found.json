@@ -1,0 +1,14 @@
+{
+  "name": "FastShip - unknown tracking number",
+  "priority": 40,
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/v1/shipments/FS1Z0+",
+    "headers": { "X-Api-Key": { "equalTo": "fastship-local-key" } }
+  },
+  "response": {
+    "status": 404,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": { "code": "NOT_FOUND", "message": "No shipment with that tracking number" } }
+  }
+}

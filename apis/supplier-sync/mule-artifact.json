@@ -1,0 +1,10 @@
+{
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": [
+    "17"
+  ],
+  "secureProperties": [
+    "db.password",
+    "sftp.password"
+  ]
+}

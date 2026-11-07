@@ -1,0 +1,9 @@
+{
+  "tracking_number": "FS1Z{{randomValue length=8 type='ALPHANUMERIC' uppercase=true}}",
+  "reference": "{{jsonPath request.body '$.reference'}}",
+  "service_code": "{{#if (jsonPath request.body '$.service_code')}}{{jsonPath request.body '$.service_code'}}{{else}}FS_STANDARD{{/if}}",
+  "status": "LABEL_CREATED",
+  "label_url": "https://labels.fastship.example/{{randomValue type='UUID'}}.pdf",
+  "created_at": "{{now format='yyyy-MM-dd\'T\'HH:mm:ss\'Z\'' timezone='UTC'}}",
+  "estimated_delivery": "{{now offset='3 days' format='yyyy-MM-dd' timezone='UTC'}}"
+}

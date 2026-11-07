@@ -1,0 +1,190 @@
+#%RAML 1.0
+title: Customer System API
+version: v1
+baseUri: http://localhost:8091/api/{version}
+mediaType: application/json
+description: |
+  System API over Salesforce (Developer Edition). A *customer* is a Salesforce
+  **Contact**. The API hides Salesforce field names (`FirstName`,
+  `MailingStreet`, ...) and SOQL behind a clean, stable contract, so callers
+  never depend on Salesforce directly.
+
+uses:
+  common: common/common-library.raml
+
+documentation:
+  - title: Salesforce field mapping
+    content: |
+      | API field                   | Salesforce Contact field |
+      |-----------------------------|--------------------------|
+      | `id`                        | `Id`                     |
+      | `firstName`                 | `FirstName`              |
+      | `lastName`                  | `LastName`               |
+      | `email`                     | `Email`                  |
+      | `phone`                     | `Phone`                  |
+      | `address.line1` / `line2`   | `MailingStreet` (two lines joined with a newline) |
+      | `address.city`              | `MailingCity`            |
+      | `address.state`             | `MailingState`           |
+      | `address.postalCode`        | `MailingPostalCode`      |
+      | `address.country`           | `MailingCountryCode` *(or `MailingCountry` if State and Country Picklists are off)* |
+      | `createdAt` / `updatedAt`   | `CreatedDate` / `LastModifiedDate` |
+
+      Email is treated as the business key: `POST /customers` returns `409`
+      if a Contact with the same email already exists.
+
+types:
+
+  CustomerId:
+    description: Salesforce Contact Id (15 or 18 characters).
+    type: string
+    pattern: ^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$
+
+  Customer:
+    type: object
+    properties:
+      id: CustomerId
+      firstName: string
+      lastName: string
+      email:
+        type: string
+        pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+      phone?: string
+      address?: common.Address
+      createdAt: datetime
+      updatedAt: datetime
+    example:
+      id: 003DEMO00000000001
+      firstName: Maria
+      lastName: Lopez
+      email: maria.lopez@example.com
+      phone: "+1 217 555 0101"
+      address:
+        line1: 742 Evergreen Terrace
+        city: Springfield
+        state: IL
+        postalCode: "62704"
+        country: US
+      createdAt: 2026-10-01T09:00:00Z
+      updatedAt: 2026-11-01T12:30:00Z
+
+  CustomerCreate:
+    type: object
+    properties:
+      firstName:
+        type: string
+        maxLength: 40
+      lastName:
+        type: string
+        maxLength: 80
+      email:
+        type: string
+        pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+        maxLength: 80
+      phone?:
+        type: string
+        maxLength: 40
+      address?: common.Address
+    example:
+      firstName: James
+      lastName: Chen
+      email: james.chen@example.com
+      address:
+        line1: 1600 Main St
+        line2: Apt 4B
+        city: Austin
+        state: TX
+        postalCode: "73301"
+        country: US
+
+  CustomerUpdate:
+    description: Partial update. Only the fields sent are changed. Email cannot be changed.
+    type: object
+    minProperties: 1
+    properties:
+      firstName?:
+        type: string
+        maxLength: 40
+      lastName?:
+        type: string
+        maxLength: 80
+      phone?:
+        type: string
+        maxLength: 40
+      address?: common.Address
+    example:
+      phone: "+1 512 555 0199"
+
+  CustomerList:
+    type: object
+    properties:
+      data: Customer[]
+      page: common.PageInfo
+
+/health:
+  get:
+    description: Also checks that the Salesforce connection is valid.
+    responses:
+      200:
+        body:
+          type: common.Health
+      503:
+        body:
+          type: common.Health
+
+/customers:
+  get:
+    is: [common.correlated, common.pageable, common.standardErrors]
+    queryParameters:
+      email?:
+        description: Exact match. Returns at most one customer.
+        type: string
+        example: maria.lopez@example.com
+    responses:
+      200:
+        body:
+          type: CustomerList
+  post:
+    is: [common.correlated, common.standardErrors]
+    body:
+      type: CustomerCreate
+    responses:
+      201:
+        headers:
+          Location:
+            example: /api/v1/customers/003DEMO00000000002
+        body:
+          type: Customer
+      409:
+        description: A customer with this email already exists. Its id is in `details`.
+        body:
+          type: common.Error
+          example:
+            code: CUSTOMER_EXISTS
+            message: A customer with this email already exists
+            correlationId: 3f1c2b7e-8a4d-4c55-9a1e-6b2d4f0c9e11
+            timestamp: 2026-11-07T10:15:30Z
+            details:
+              - "id: 003DEMO00000000002"
+  /{customerId}:
+    uriParameters:
+      customerId: CustomerId
+    get:
+      is: [common.correlated, common.standardErrors]
+      responses:
+        200:
+          body:
+            type: Customer
+        404:
+          body:
+            type: common.Error
+    patch:
+      is: [common.correlated, common.standardErrors]
+      body:
+        type: CustomerUpdate
+      responses:
+        200:
+          body:
+            type: Customer
+        404:
+          body:
+            type: common.Error

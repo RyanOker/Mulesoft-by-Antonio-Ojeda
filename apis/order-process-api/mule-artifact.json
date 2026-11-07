@@ -1,0 +1,12 @@
+{
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": [
+    "17"
+  ],
+  "secureProperties": [
+    "amqp.password",
+    "notifications.mailtrapPassword",
+    "notifications.mailtrapUser",
+    "notifications.slackWebhookUrl"
+  ]
+}
